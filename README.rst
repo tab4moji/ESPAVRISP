@@ -1,7 +1,7 @@
 AVR ISP over WiFi for MicroPython on ESP8266/ESP32
 ==================================================
 
-This library is originally writeen in Arduino sketch by Kiril Zyapkov.
+This library is originally written in Arduino sketch by Kiril Zyapkov.
 This library ported in micropython also allows an ESP8266/ESP32 module with the HSPI port available to become an AVR In-System Programmer.
 
 Hardware
@@ -41,18 +41,21 @@ See the included example. In short:
 
 .. code:: arduino
 
-    import ESPVRISP
+    import ESPAVRISP
 
     # Create the programmer object
-    avrprog = ESPVRISP.ESPVRISP(TCP_PORT, RESET_PIN)
-    # ... with custom SPI frequency
-    avrprog = ESPVRISP.ESPVRISP(TCP_PORT, RESET_PIN, 300000)
+    avrprog = ESPAVRISP.ESPAVRISP(TCP_PORT, RESET_PIN)
+    avrprog.begin()
 
+    # ... with custom SPI frequency
+    # avrprog = ESPAVRISP.ESPAVRISP(TCP_PORT, RESET_PIN, 300000)
+    # avrprog.begin()
+    
     # Check current connection state, but don't perform any actions
-    state = avrprog.update();
+    state = avrprog.update()
 
     # Serve the pending connection, execute STK500 commands
-    state = avrprog.serve();
+    state = avrprog.serve()
 
 License and Authors
 ~~~~~~~~~~~~~~~~~~~
