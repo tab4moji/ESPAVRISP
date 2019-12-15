@@ -14,7 +14,6 @@
 import ESPAVRISP
 
 # ESPAVRISP.avrisp_debug = True
-avrprog = ESPAVRISP.ESPAVRISP(328, 5, 150000)
 
 def setup():
     # listen for avrdudes
@@ -47,7 +46,9 @@ def loop():
 
     return
 
-def main():
+def main(spi_freq = 96*1024, sock_timeout = 256, reset_pin = 5):
+    global avrprog
+    avrprog = ESPAVRISP.ESPAVRISP(328, reset_pin, spi_freq, sock_timeout)
     setup()
     while True:
         loop()

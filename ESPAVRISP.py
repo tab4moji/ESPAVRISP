@@ -99,6 +99,8 @@ AVRISP_SWMIN = 18
 AVRISP_PTIME = 10
 EECHUNK = 32
 
+ERROR_RETRY = 5
+
 V_LOW  = 0    # from Arduino
 V_HIGH = 1    # from Arduino
 
@@ -132,7 +134,7 @@ ESP_SCK  = 14
 
 class ESPAVRISP:
 
-    def __init__(self, port, reset_pin, spi_freq = 150000, reset_state = False, reset_activehigh = False):
+    def __init__(self, port, reset_pin, spi_freq = 128*1024, sock_timeout = 128, reset_state = False, reset_activehigh = False):
         self.buff = bytearray(256)
         self.error = 0
         self.pmode = 0
@@ -143,15 +145,10 @@ class ESPAVRISP:
         # micropython's socket doesn't have any exception.
         # XXX unix port has exceptions.
 
-        try:
-            # 'esp32' == os.uname().sysname
-            self.SPI = machine.SPI(ESP_HSPI, baudrate = spi_freq, sck = machine.Pin(ESP_SCK), mosi = machine.Pin(ESP_MOSI), miso = machine.Pin(ESP_MISO))
-        except:
-            # SPI 'esp8266' == os.uname().sysname
-            self.SPI = machine.SPI(ESP_HSPI, baudrate = spi_freq, polarity = 0, phase = 0)
-
         #_spi_freq(spi_freq)
         self._spi_freq = spi_freq
+
+        self._sock_timeout = sock_timeout
 
         # _server(WiFiServer(port))
         port_addr = socket.getaddrinfo('0.0.0.0', port)[0][-1]
@@ -179,11 +176,17 @@ class ESPAVRISP:
         self._server.listen(1)
         return
 
-    def setSpiFrequency(self, freq):
-        self._spi_freq = freq
-        if self._state == AVRISP_STATE_ACTIVE:
-            self.SPI.init(baudrate = freq)
-        return
+    def setTimeout(self, timeout):
+        self._sock_timeout = timeout
+        self._client.settimeout(self._sock_timeout) # for self.getch()
+
+    #def setSpiFrequency(self, freq):
+    #    self._spi_freq = freq
+    #    if self._state == AVRISP_STATE_ACTIVE:
+    #        self.SPI.deinit();
+    #        self.setReset(self._reset_state)
+    #        self.SPI.init(baudrate = freq)
+    #    return
 
     def setReset(self, rst):
         self._reset_state = rst
@@ -198,7 +201,7 @@ class ESPAVRISP:
             # XXX self._client.setNoDelay(True);
             # XXX AVRISP_DEBUG("client connect %s:%d", self._client.remoteIP().toString().c_str(), self._client.remotePort());
             AVRISP_DEBUG(self.addr)
-            self._client.settimeout(10) # for self.getch()
+            self._client.settimeout(self._sock_timeout) # for self.getch()
             self._state = AVRISP_STATE_PENDING
             self._reject_incoming()
 
@@ -210,8 +213,7 @@ class ESPAVRISP:
                 gc.collect()
                 AVRISP_DEBUG("client disconnect")
                 if self.pmode:
-                    self.SPI.deinit()
-                    self.pmode = False
+                    self.end_pmode()
                 self.setReset(self._reset_state)
                 self._state = AVRISP_STATE_IDLE
             else:
@@ -248,8 +250,18 @@ class ESPAVRISP:
         # while not self.client_connected:
         #     pass
 
+        for i in range(ERROR_RETRY):
+            try:
+                byte = self._client.read(1)
+                break
+            except:
+                self.error += 1
+
+        self.error_reset()
+
+        # XXX (2) against: IndexError: bytes index out of range
         try:
-            byte = self._client.read(1)
+            res = byte[0]
         except:
             byte = bytes([0x00])
 
@@ -269,12 +281,31 @@ class ESPAVRISP:
         self.SPI.write_readinto(bytearray([d]), spi_recvbuf)
         return spi_recvbuf
 
+    def send_to_dude(self, data):
+        for i in range(ERROR_RETRY):
+            try:
+                self._client.send(data)
+                break
+            except:
+                self.error += 1
+
+        self.error_reset()
+
+    def error_reset(self):
+        if (ERROR_RETRY - 1) <= self.error:
+            #self.setTimeout(int((101*self._sock_timeout)/100))
+            #self.setSpiFrequency(int((99*self._spi_freq)/100))
+            self.error = 0
+            self._client.close()
+            self.client_connected = False
+            gc.collect()
+
     def empty_reply(self):
         if Sync_CRC_EOP == self.getch():
-            self._client.send(Resp_STK_INSYNC)
-            self._client.send(Resp_STK_OK)
+            self.send_to_dude(Resp_STK_INSYNC)
+            self.send_to_dude(Resp_STK_OK)
         else:
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
             self.error += 1
         return
 
@@ -284,10 +315,10 @@ class ESPAVRISP:
             resp[0] = Resp_STK_INSYNC[0]
             resp[1] = b
             resp[2] = Resp_STK_OK[0]
-            self._client.send(resp)
+            self.send_to_dude(resp)
         else:
             self.error += 1
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
         return
 
     def get_parameter(self, c):
@@ -325,6 +356,13 @@ class ESPAVRISP:
         return
 
     def start_pmode(self):
+        try:
+            # 'esp32' == os.uname().sysname
+            self.SPI = machine.SPI(ESP_HSPI, baudrate = self._spi_freq, sck = machine.Pin(ESP_SCK), mosi = machine.Pin(ESP_MOSI), miso = machine.Pin(ESP_MISO))
+        except:
+            # SPI 'esp8266' == os.uname().sysname
+            self.SPI = machine.SPI(ESP_HSPI, baudrate = self._spi_freq, polarity = 0, phase = 0)
+
         self.SPI.init(baudrate = self._spi_freq)
         # self.SPI.setHwCs(False);
 
@@ -340,10 +378,22 @@ class ESPAVRISP:
         return
 
     def end_pmode(self):
-        self.SPI.deinit();
+        try:
+            self.SPI.deinit()
+            del self.SPI
+        except:
+            pass
+        self.normalize_pin(ESP_MISO)
+        self.normalize_pin(ESP_MOSI)
+        self.normalize_pin(ESP_SCK)
         self.setReset(self._reset_state)
         self.pmode = 0
         return
+
+    def normalize_pin(self, no):
+        pin = machine.Pin(no)
+        pin.init(mode = machine.Pin.IN)
+        del pin
 
     def universal(self):
         self.fill(4);
@@ -380,11 +430,11 @@ class ESPAVRISP:
         self.fill(length)
 
         if Sync_CRC_EOP == self.getch():
-            self._client.send(Resp_STK_INSYNC)
-            self._client.send(self.write_flash_pages(length))
+            self.send_to_dude(Resp_STK_INSYNC)
+            self.send_to_dude(self.write_flash_pages(length))
         else:
             self.error += 1
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
 
         return
 
@@ -452,15 +502,15 @@ class ESPAVRISP:
             AVRISP_DEBUG("program_page: EEPROM Mode")
             result = self.write_eeprom(length)
             if Sync_CRC_EOP == self.getch():
-                self._client.send(Resp_STK_INSYNC)
-                self._client.send(result)
+                self.send_to_dude(Resp_STK_INSYNC)
+                self.send_to_dude(result)
             else:
                 self.error += 1
-                self._client.send(Resp_STK_NOSYNC)
+                self.send_to_dude(Resp_STK_NOSYNC)
             return;
         
         AVRISP_DEBUG("program_page:Error !!!!!")
-        self._client.send(Resp_STK_FAILED)
+        self.send_to_dude(Resp_STK_FAILED)
         return
 
     def flash_read(self, hilo, addr):
@@ -498,10 +548,10 @@ class ESPAVRISP:
         memtype = self.getch()
         if not Sync_CRC_EOP == self.getch():
             self.error += 1
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
             return
 
-        self._client.send(Resp_STK_INSYNC)
+        self.send_to_dude(Resp_STK_INSYNC)
         if memtype == ord('F'):
             self.flash_read_page(length)
         if memtype == ord('E'):
@@ -511,18 +561,18 @@ class ESPAVRISP:
     def read_signature(self):
         if Sync_CRC_EOP != self.getch():
             self.error += 1
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
             return
 
-        self._client.send(Resp_STK_INSYNC)
+        self.send_to_dude(Resp_STK_INSYNC)
 
         high = self.spi_transaction(0x30, 0x00, 0x00, 0x00)
-        self._client.send(high)
+        self.send_to_dude(high)
         middle = self.spi_transaction(0x30, 0x00, 0x01, 0x00)
-        self._client.send(middle)
+        self.send_to_dude(middle)
         low = self.spi_transaction(0x30, 0x00, 0x02, 0x00)
-        self._client.send(low)
-        self._client.send(Resp_STK_OK)
+        self.send_to_dude(low)
+        self.send_to_dude(Resp_STK_OK)
         return
 
     # It seems ArduinoISP is based on the original STK500 (not v2)
@@ -542,9 +592,9 @@ class ESPAVRISP:
 
         elif ch == Cmnd_STK_GET_SIGN_ON:
             if self.getch() == Sync_CRC_EOP:
-                self._client.send(Resp_STK_INSYNC)
-                self._client.send("AVR ISP") # AVR061 says "AVR STK"?
-                self._client.send(Resp_STK_OK)
+                self.send_to_dude(Resp_STK_INSYNC)
+                self.send_to_dude("AVR ISP") # AVR061 says "AVR STK"?
+                self.send_to_dude(Resp_STK_OK)
 
         elif ch == Cmnd_STK_GET_PARAMETER:
             self.get_parameter(self.getch())
@@ -605,7 +655,7 @@ class ESPAVRISP:
             # this is how we can get back in sync
         elif ch == Sync_CRC_EOP: # 0x20, space
             self.error += 1
-            self._client.send(Resp_STK_NOSYNC)
+            self.send_to_dude(Resp_STK_NOSYNC)
 
         # anything else we will return STK_UNKNOWN
         else:
@@ -613,9 +663,9 @@ class ESPAVRISP:
             self.error += 1
             try:
                 if Sync_CRC_EOP == self.getch():
-                    self._client.send(Resp_STK_UNKNOWN)
+                    self.send_to_dude(Resp_STK_UNKNOWN)
                 else:
-                    self._client.send(Resp_STK_NOSYNC)
+                    self.send_to_dude(Resp_STK_NOSYNC)
             except:
                 self.client_connected = False
         return
@@ -642,4 +692,18 @@ class ESPAVRISP:
         time.sleep_ms(100);
         gc.collect()
         return
+
+# [AVRISP] now idle
+# [AVRISP] connection pending
+# [AVRISP] programming mode
+# Traceback (most recent call last):
+#   File "<stdin>", line 1, in <module>
+#   File "MicroPython_Wifi_AVRISP.py", line 54, in main
+#   File "MicroPython_Wifi_AVRISP.py", line 45, in loop
+#   File "ESPAVRISP.py", line 245, in serve
+#   File "ESPAVRISP.py", line 626, in avrisp
+#   File "ESPAVRISP.py", line 296, in empty_reply
+# OSError: [Errno 104] ECONNRESET
+# >>>
+# >>>
 
