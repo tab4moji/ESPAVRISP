@@ -44,7 +44,7 @@ See the included example (MicroPython_Wifi_AVRISP.py). In short:
     import ESPAVRISP
 
     TCP_PORT = 328
-    RESET_PIN =2
+    RESET_PIN = 5
 
     # Create the programmer object
     avrprog = ESPAVRISP.ESPAVRISP(TCP_PORT, RESET_PIN)
