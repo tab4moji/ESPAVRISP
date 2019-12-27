@@ -17,92 +17,94 @@ import socket
 import gc
 import machine
 import time
+from micropython import const
 
-AVRISP_STATE_IDLE         = 0 # no active TCP session
-AVRISP_STATE_PENDING      = 1 # TCP connected, pending SPI activation
-AVRISP_STATE_ACTIVE       = 2 # programmer is active and owns the SPI bus
+AVRISP_STATE_IDLE         = const(0) # no active TCP session
+AVRISP_STATE_PENDING      = const(1) # TCP connected, pending SPI activation
+AVRISP_STATE_ACTIVE       = const(2) # programmer is active and owns the SPI bus
 
-STK_SIGN_ON_MESSAGE       = "AVR STK" # Sign on string for Cmnd_STK_GET_SIGN_ON
-Resp_STK_OK               =  b'\x10'  # ' '
-Resp_STK_FAILED           =  b'\x11'  # ' '
-Resp_STK_UNKNOWN          =  b'\x12'  # ' '
-Resp_STK_NODEVICE         =  b'\x13'  # ' '
-Resp_STK_INSYNC           =  b'\x14'  # ' '
-Resp_STK_NOSYNC           =  b'\x15'  # ' '
-Resp_ADC_CHANNEL_ERROR    =  b'\x16'  # ' '
-Resp_ADC_MEASURE_OK       =  b'\x17'  # ' '
-Resp_PWM_CHANNEL_ERROR    =  b'\x18'  # ' '
-Resp_PWM_ADJUST_OK        =  b'\x19'  # ' '
-Sync_CRC_EOP              =  0x20  # 'SPACE'
-Cmnd_STK_GET_SYNC         =  0x30  # ' '
-Cmnd_STK_GET_SIGN_ON      =  0x31  # ' '
-Cmnd_STK_RESET            =  0x32  # ' '
-Cmnd_STK_SINGLE_CLOCK     =  0x33  # ' '
-Cmnd_STK_STORE_PARAMETERS =  0x34  # ' '
-Cmnd_STK_SET_PARAMETER    =  0x40  # ' '
-Cmnd_STK_GET_PARAMETER    =  0x41  # ' '
-Cmnd_STK_SET_DEVICE       =  0x42  # ' '
-Cmnd_STK_GET_DEVICE       =  0x43  # ' '
-Cmnd_STK_GET_STATUS       =  0x44  # ' '
-Cmnd_STK_SET_DEVICE_EXT   =  0x45  # ' '
-Cmnd_STK_ENTER_PROGMODE   =  0x50  # ' '
-Cmnd_STK_LEAVE_PROGMODE   =  0x51  # ' '
-Cmnd_STK_CHIP_ERASE       =  0x52  # ' '
-Cmnd_STK_CHECK_AUTOINC    =  0x53  # ' '
-Cmnd_STK_CHECK_DEVICE     =  0x54  # ' '
-Cmnd_STK_LOAD_ADDRESS     =  0x55  # ' '
-Cmnd_STK_UNIVERSAL        =  0x56  # ' '
-Cmnd_STK_PROG_FLASH       =  0x60  # ' '
-Cmnd_STK_PROG_DATA        =  0x61  # ' '
-Cmnd_STK_PROG_FUSE        =  0x62  # ' '
-Cmnd_STK_PROG_LOCK        =  0x63  # ' '
-Cmnd_STK_PROG_PAGE        =  0x64  # ' '
-Cmnd_STK_PROG_FUSE_EXT    =  0x65  # ' '
-Cmnd_STK_READ_FLASH       =  0x70  # ' '
-Cmnd_STK_READ_DATA        =  0x71  # ' '
-Cmnd_STK_READ_FUSE        =  0x72  # ' '
-Cmnd_STK_READ_LOCK        =  0x73  # ' '
-Cmnd_STK_READ_PAGE        =  0x74  # ' '
-Cmnd_STK_READ_SIGN        =  0x75  # ' '
-Cmnd_STK_READ_OSCCAL      =  0x76  # ' '
-Cmnd_STK_READ_FUSE_EXT    =  0x77  # ' '
-Cmnd_STK_READ_OSCCAL_EXT  =  0x78  # ' '
-Parm_STK_HW_VER           =  0x80  # ' ' - R
-Parm_STK_SW_MAJOR         =  0x81  # ' ' - R
-Parm_STK_SW_MINOR         =  0x82  # ' ' - R
-Parm_STK_LEDS             =  0x83  # ' ' - R/W
-Parm_STK_VTARGET          =  0x84  # ' ' - R/W
-Parm_STK_VADJUST          =  0x85  # ' ' - R/W
-Parm_STK_OSC_PSCALE       =  0x86  # ' ' - R/W
-Parm_STK_OSC_CMATCH       =  0x87  # ' ' - R/W
-Parm_STK_RESET_DURATION   =  0x88  # ' ' - R/W
-Parm_STK_SCK_DURATION     =  0x89  # ' ' - R/W
-Parm_STK_BUFSIZEL         =  0x90  # ' ' - R/W, Range {0..255}
-Parm_STK_BUFSIZEH         =  0x91  # ' ' - R/W, Range {0..255}
-Parm_STK_DEVICE           =  0x92  # ' ' - R/W, Range {0..255}
-Parm_STK_PROGMODE         =  0x93  # ' ' - 'P' or 'S'
-Parm_STK_PARAMODE         =  0x94  # ' ' - TRUE or FALSE
-Parm_STK_POLLING          =  0x95  # ' ' - TRUE or FALSE
-Parm_STK_SELFTIMED        =  0x96  # ' ' - TRUE or FALSE
-Stat_STK_INSYNC           =  0x01  # INSYNC status bit, '1' - INSYNC
-Stat_STK_PROGMODE         =  0x02  # Programming mode,  '1' - PROGMODE
-Stat_STK_STANDALONE       =  0x04  # Standalone mode,   '1' - SM mode
-Stat_STK_RESET            =  0x08  # RESET button,      '1' - Pushed
-Stat_STK_PROGRAM          =  0x10  # Program button, '   1' - Pushed
-Stat_STK_LEDG             =  0x20  # Green LED status,  '1' - Lit
-Stat_STK_LEDR             =  0x40  # Red LED status,    '1' - Lit
-Stat_STK_LEDBLINK         =  0x80  # LED blink ON/OFF,  '1' - Blink
+#STK_SIGN_ON_MESSAGE       = "AVR STK" # Sign on string for Cmnd_STK_GET_SIGN_ON # AVR061 says "AVR STK"?
+STK_SIGN_ON_MESSAGE       = "AVR ISP" # Sign on string for Cmnd_STK_GET_SIGN_ON # AVR061 says "AVR STK"?
+Resp_STK_OK               = b'\x10' # ' '
+Resp_STK_FAILED           = b'\x11' # ' '
+Resp_STK_UNKNOWN          = b'\x12' # ' '
+Resp_STK_NODEVICE         = b'\x13' # ' '
+Resp_STK_INSYNC           = b'\x14' # ' '
+Resp_STK_NOSYNC           = b'\x15' # ' '
+Resp_ADC_CHANNEL_ERROR    = b'\x16' # ' '
+Resp_ADC_MEASURE_OK       = b'\x17' # ' '
+Resp_PWM_CHANNEL_ERROR    = b'\x18' # ' '
+Resp_PWM_ADJUST_OK        = b'\x19' # ' '
+Sync_CRC_EOP              = const(0x20) # 'SPACE'
+Cmnd_STK_GET_SYNC         = const(0x30) # ' '
+Cmnd_STK_GET_SIGN_ON      = const(0x31) # ' '
+Cmnd_STK_RESET            = const(0x32) # ' '
+Cmnd_STK_SINGLE_CLOCK     = const(0x33) # ' '
+Cmnd_STK_STORE_PARAMETERS = const(0x34) # ' '
+Cmnd_STK_SET_PARAMETER    = const(0x40) # ' '
+Cmnd_STK_GET_PARAMETER    = const(0x41) # ' '
+Cmnd_STK_SET_DEVICE       = const(0x42) # ' '
+Cmnd_STK_GET_DEVICE       = const(0x43) # ' '
+Cmnd_STK_GET_STATUS       = const(0x44) # ' '
+Cmnd_STK_SET_DEVICE_EXT   = const(0x45) # ' '
+Cmnd_STK_ENTER_PROGMODE   = const(0x50) # ' '
+Cmnd_STK_LEAVE_PROGMODE   = const(0x51) # ' '
+Cmnd_STK_CHIP_ERASE       = const(0x52) # ' '
+Cmnd_STK_CHECK_AUTOINC    = const(0x53) # ' '
+Cmnd_STK_CHECK_DEVICE     = const(0x54) # ' '
+Cmnd_STK_LOAD_ADDRESS     = const(0x55) # ' '
+Cmnd_STK_UNIVERSAL        = const(0x56) # ' '
+Cmnd_STK_PROG_FLASH       = const(0x60) # ' '
+Cmnd_STK_PROG_DATA        = const(0x61) # ' '
+Cmnd_STK_PROG_FUSE        = const(0x62) # ' '
+Cmnd_STK_PROG_LOCK        = const(0x63) # ' '
+Cmnd_STK_PROG_PAGE        = const(0x64) # ' '
+Cmnd_STK_PROG_FUSE_EXT    = const(0x65) # ' '
+Cmnd_STK_READ_FLASH       = const(0x70) # ' '
+Cmnd_STK_READ_DATA        = const(0x71) # ' '
+Cmnd_STK_READ_FUSE        = const(0x72) # ' '
+Cmnd_STK_READ_LOCK        = const(0x73) # ' '
+Cmnd_STK_READ_PAGE        = const(0x74) # ' '
+Cmnd_STK_READ_SIGN        = const(0x75) # ' '
+Cmnd_STK_READ_OSCCAL      = const(0x76) # ' '
+Cmnd_STK_READ_FUSE_EXT    = const(0x77) # ' '
+Cmnd_STK_READ_OSCCAL_EXT  = const(0x78) # ' '
+Parm_STK_HW_VER           = const(0x80) # ' ' - R
+Parm_STK_SW_MAJOR         = const(0x81) # ' ' - R
+Parm_STK_SW_MINOR         = const(0x82) # ' ' - R
+Parm_STK_LEDS             = const(0x83) # ' ' - R/W
+Parm_STK_VTARGET          = const(0x84) # ' ' - R/W
+Parm_STK_VADJUST          = const(0x85) # ' ' - R/W
+Parm_STK_OSC_PSCALE       = const(0x86) # ' ' - R/W
+Parm_STK_OSC_CMATCH       = const(0x87) # ' ' - R/W
+Parm_STK_RESET_DURATION   = const(0x88) # ' ' - R/W
+Parm_STK_SCK_DURATION     = const(0x89) # ' ' - R/W
+Parm_STK_BUFSIZEL         = const(0x90) # ' ' - R/W, Range {0..255}
+Parm_STK_BUFSIZEH         = const(0x91) # ' ' - R/W, Range {0..255}
+Parm_STK_DEVICE           = const(0x92) # ' ' - R/W, Range {0..255}
+Parm_STK_PROGMODE         = const(0x93) # ' ' - 'P' or 'S'
+Parm_STK_PARAMODE         = const(0x94) # ' ' - TRUE or FALSE
+Parm_STK_POLLING          = const(0x95) # ' ' - TRUE or FALSE
+Parm_STK_SELFTIMED        = const(0x96) # ' ' - TRUE or FALSE
+Stat_STK_INSYNC           = const(0x01) # INSYNC status bit, '1' - INSYNC
+Stat_STK_PROGMODE         = const(0x02) # Programming mode,  '1' - PROGMODE
+Stat_STK_STANDALONE       = const(0x04) # Standalone mode,   '1' - SM mode
+Stat_STK_RESET            = const(0x08) # RESET button,      '1' - Pushed
+Stat_STK_PROGRAM          = const(0x10) # Program button, '   1' - Pushed
+Stat_STK_LEDG             = const(0x20) # Green LED status,  '1' - Lit
+Stat_STK_LEDR             = const(0x40) # Red LED status,    '1' - Lit
+Stat_STK_LEDBLINK         = const(0x80) # LED blink ON/OFF,  '1' - Blink
 
-AVRISP_HWVER = 2
-AVRISP_SWMAJ = 1
-AVRISP_SWMIN = 18
-AVRISP_PTIME = 10
-EECHUNK = 32
+AVRISP_HWVER = const(2)
+AVRISP_SWMAJ = const(1)
+AVRISP_SWMIN = const(18)
+AVRISP_PTIME = const(10)
+EECHUNK = const(32)
 
-ERROR_RETRY = 5
+ERROR_RETRY_COUNT = const(5)
 
-V_LOW  = 0    # from Arduino
-V_HIGH = 1    # from Arduino
+V_LOW  = const(0)    # from Arduino
+V_HIGH = const(1)    # from Arduino
 
 avrisp_debug = False
 def AVRISP_DEBUG(x):
@@ -139,6 +141,7 @@ class ESPAVRISP:
         self.error = 0
         self.pmode = 0
         self.here = 0
+        self.error_retry = ERROR_RETRY_COUNT
 
         # tcp connected or not :
         self.client_connected = False
@@ -247,10 +250,8 @@ class ESPAVRISP:
         return
 
     def getch(self):
-        # while not self.client_connected:
-        #     pass
 
-        for i in range(ERROR_RETRY):
+        for i in range(self.error_retry):
             try:
                 byte = self._client.read(1)
                 break
@@ -282,7 +283,7 @@ class ESPAVRISP:
         return spi_recvbuf
 
     def send_to_dude(self, data):
-        for i in range(ERROR_RETRY):
+        for i in range(self.error_retry):
             try:
                 self._client.send(data)
                 break
@@ -292,7 +293,7 @@ class ESPAVRISP:
         self.error_reset()
 
     def error_reset(self):
-        if (ERROR_RETRY - 1) <= self.error:
+        if (self.error_retry - 1) <= self.error:
             #self.setTimeout(int((101*self._sock_timeout)/100))
             #self.setSpiFrequency(int((99*self._spi_freq)/100))
             self.error = 0
@@ -593,7 +594,7 @@ class ESPAVRISP:
         elif ch == Cmnd_STK_GET_SIGN_ON:
             if self.getch() == Sync_CRC_EOP:
                 self.send_to_dude(Resp_STK_INSYNC)
-                self.send_to_dude("AVR ISP") # AVR061 says "AVR STK"?
+                self.send_to_dude(STK_SIGN_ON_MESSAGE)
                 self.send_to_dude(Resp_STK_OK)
 
         elif ch == Cmnd_STK_GET_PARAMETER:
@@ -692,18 +693,3 @@ class ESPAVRISP:
         time.sleep_ms(100);
         gc.collect()
         return
-
-# [AVRISP] now idle
-# [AVRISP] connection pending
-# [AVRISP] programming mode
-# Traceback (most recent call last):
-#   File "<stdin>", line 1, in <module>
-#   File "MicroPython_Wifi_AVRISP.py", line 54, in main
-#   File "MicroPython_Wifi_AVRISP.py", line 45, in loop
-#   File "ESPAVRISP.py", line 245, in serve
-#   File "ESPAVRISP.py", line 626, in avrisp
-#   File "ESPAVRISP.py", line 296, in empty_reply
-# OSError: [Errno 104] ECONNRESET
-# >>>
-# >>>
-

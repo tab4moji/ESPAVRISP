@@ -1,7 +1,7 @@
 AVR ISP over WiFi for MicroPython on ESP8266/ESP32
 ==================================================
 
-This library is originally writeen in Arduino sketch by Kiril Zyapkov.
+This library is originally written in Arduino sketch by Kiril Zyapkov.
 This library ported in micropython also allows an ESP8266/ESP32 module with the HSPI port available to become an AVR In-System Programmer.
 
 Hardware
