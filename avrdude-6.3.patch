@@ -1,0 +1,45 @@
+diff -ruN avrdude-6.3.bak/ser_posix.c avrdude-6.3/ser_posix.c
+--- avrdude-6.3.bak/ser_posix.c	2015-12-10 07:45:57.000000000 +0900
++++ avrdude-6.3/ser_posix.c	2019-11-14 00:05:45.628233042 +0900
+@@ -222,6 +222,11 @@
+   return 0;
+ }
+ 
++static int ser_set_dtr_rts_for_sock(union filedescriptor *fdp, int is_on)
++{
++  return -1;
++}
++
+ 
+ static int ser_set_dtr_rts(union filedescriptor *fdp, int is_on)
+ {
+@@ -252,6 +257,8 @@
+   return 0;
+ }
+ 
++extern struct serial_device serial_serdev;
++
+ static int ser_open(char * port, union pinfo pinfo, union filedescriptor *fdp)
+ {
+   int rc;
+@@ -262,6 +269,8 @@
+    * handle it as a TCP connection to a terminal server.
+    */
+   if (strncmp(port, "net:", strlen("net:")) == 0) {
++    serial_serdev.set_dtr_rts = ser_set_dtr_rts_for_sock;
++
+     return net_open(port + strlen("net:"), fdp);
+   }
+ 
+diff -ruN avrdude-6.3.bak/stk500.c avrdude-6.3/stk500.c
+--- avrdude-6.3.bak/stk500.c	2014-10-07 07:27:53.000000000 +0900
++++ avrdude-6.3/stk500.c	2019-11-23 20:27:39.500074032 +0900
+@@ -1118,7 +1118,7 @@
+   else if (buf[0] != Resp_STK_OK) {
+     avrdude_message(MSG_INFO, "\n%s: stk500_getparm(): (a) protocol error, "
+                     "expect=0x%02x, resp=0x%02x\n",
+-                    progname, Resp_STK_INSYNC, buf[0]);
++                    progname, Resp_STK_OK, buf[0]);
+     return -3;
+   }
+ 
